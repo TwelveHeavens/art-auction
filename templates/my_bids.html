@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Мои активные ставки</h1>
+{% if active_lots %}
+    <div class="row">
+        {% for lot in active_lots %}
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    {% if lot.image %}
+                        <img src="{{ url_for('static', filename='uploads/' + lot.image) }}" class="card-img-top" alt="{{ lot.title }}">
+                    {% endif %}
+                    <div class="card-body">
+                        <h5 class="card-title">{{ lot.title }}</h5>
+                        <p class="card-text">{{ lot.description }}</p>
+                        <p class="card-text">Текущая ставка: {{ "{:,.2f}".format(lot.current_price) }} руб.</p>
+                        <p class="card-text">Время окончания: {{ lot.end_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-primary">Подробнее</a>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <p>Вы пока не участвуете в активных аукционах.</p>
+{% endif %}
+{% endblock %}

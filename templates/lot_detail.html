@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ lot.title }}</h1>
+<div class="row">
+    <div class="col-md-6">
+        {% if lot.image %}
+            <img src="{{ url_for('static', filename='uploads/' + lot.image) }}" class="img-fluid" alt="{{ lot.title }}">
+        {% endif %}
+    </div>
+    <div class="col-md-6">
+        <p><strong>Описание:</strong> {{ lot.description }}</p>
+        <p><strong>Текущая ставка:</strong> {{ "{:,.2f}".format(lot.current_price) }} руб.</p>
+        <p><strong>Начальная цена:</strong> {{ "{:,.2f}".format(lot.start_price) }} руб.</p>
+        <p><strong>Время начала:</strong> {{ lot.start_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        <p><strong>Время окончания:</strong> {{ lot.end_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        {% if lot.is_active() %}
+            <p><strong>Статус:</strong> Активен</p>
+            {% if current_user.is_authenticated %}
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="bid_amount" class="form-label">Ваша ставка (руб.)</label>
+                    </div>
+                    <div class="mb-3 input-group">
+                        <input type="text" class="form-control" id="bid_amount" name="bid_amount" required>
+                        <span class="input-group-text">руб.</span>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Сделать ставку</button>
+                </form>
+            {% else %}
+                <p><a href="{{ url_for('login') }}">Войдите</a>, чтобы сделать ставку.</p>
+            {% endif %}
+        {% else %}
+            <p><strong>Статус:</strong>
+                {% if lot.start_time_moscow() > now_moscow %}
+                    Ещё не начался
+                {% else %}
+                    Завершён
+                {% endif %}
+            </p>
+            {% if winner %}
+                <div class="alert alert-success">
+                    Поздравляем! Победитель аукциона: <strong>{{ winner.username }}</strong>
+                </div>
+            {% else %}
+                <p>Ставок не было.</p>
+            {% endif %}
+        {% endif %}
+        <h3>История ставок</h3>
+        {% if bids %}
+            <ul>
+                {% for bid in bids %}
+                    <li>{{ "{:,.2f}".format(bid.amount) }} руб. ({{ bid.created_at_moscow().strftime('%Y-%m-%d %H:%M:%S') }})</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>Ставок пока нет.</p>
+        {% endif %}
+    </div>
+</div>
+<script>
+function formatNumberWithSpaces(numberStr) {
+    // Удаляем ведущие нули
+    numberStr = numberStr.replace(/^0+/, '') || '0';
+    // Форматируем, добавляя пробелы каждые 3 цифры с конца
+    let result = '';
+    for (let i = numberStr.length - 1, count = 0; i >= 0; i--) {
+        if (count > 0 && count % 3 === 0) {
+            result = ' ' + result;
+        }
+        result = numberStr[i] + result;
+        count++;
+    }
+    return result;
+}
+
+document.getElementById('bid_amount').addEventListener('input', function(e) {
+    let input = e.target;
+    let cursorPos = input.selectionStart;
+    let rawValue = input.value.replace(/[^\d.]/g, '');
+
+    // Разделяем на целую и дробную части, ограничиваем целую часть 15 цифрами
+    let parts = rawValue.split('.');
+    let integerPart = parts[0] || '';
+    if (integerPart.length > 15) {
+        integerPart = integerPart.slice(0, 15);
+    }
+    let decimalPart = parts.length > 1 ? '.' + parts[1].slice(0, 2) : '';
+
+    // Форматируем целую часть
+    let formattedInteger = formatNumberWithSpaces(integerPart);
+
+    // Объединяем части
+    let formattedValue = formattedInteger + decimalPart;
+    
+    // Вычисляем позицию курсора в "чистом" значении (без пробелов)
+    let cleanValue = integerPart + decimalPart;
+    let cleanCursorPos = cursorPos - (input.value.slice(0, cursorPos).match(/\s/g) || []).length;
+    if (cleanCursorPos < 0) cleanCursorPos = 0;
+
+    // Устанавливаем новое значение
+    input.value = formattedValue;
+
+    // Вычисляем новую позицию курсора
+    let newCursorPos = 0;
+    let cleanIndex = 0;
+    for (let i = 0; i < formattedValue.length && cleanIndex < cleanCursorPos; i++) {
+        if (/[\d.]/.test(formattedValue[i])) {
+            cleanIndex++;
+        }
+        newCursorPos = i + 1;
+    }
+
+    if (cleanCursorPos >= cleanValue.length) {
+        newCursorPos = formattedValue.length;
+    }
+
+    input.setSelectionRange(newCursorPos, newCursorPos);
+});
+
+// Очищаем пробелы перед отправкой формы
+document.querySelector('form').addEventListener('submit', function(e) {
+    let input = document.getElementById('bid_amount');
+    input.value = input.value.replace(/\s/g, '');
+});
+</script>
+{% endblock %}

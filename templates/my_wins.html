@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Мои выигранные лоты</h1>
+{% if won_lots %}
+    <div class="row">
+        {% for lot in won_lots %}
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    {% if lot.image %}
+                        <img src="{{ url_for('static', filename='uploads/' + lot.image) }}" class="card-img-top" alt="{{ lot.title }}">
+                    {% endif %}
+                    <div class="card-body">
+                        <h5 class="card-title">{{ lot.title }}</h5>
+                        <p class="card-text">{{ lot.description }}</p>
+                        <p class="card-text">Выигранная ставка: {{ "{:,.2f}".format(lot.current_price) }} руб.</p>
+                        <p class="card-text">Время окончания: {{ lot.end_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-primary">Подробнее</a>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <p>Вы пока не выиграли ни одного лота.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Добавить лот</h1>
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="title" class="form-label">Название</label>
+        <input type="text" class="form-control" id="title" name="title" required>
+    </div>
+    <div class="mb-3">
+        <label for="description" class="form-label">Описание</label>
+        <textarea class="form-control" id="description" name="description" required></textarea>
+    </div>
+    <div class="mb-3">
+        <label for="start_price" class="form-label">Начальная цена</label>
+    </div>
+    <div class="mb-3 input-group">
+        <input type="text" class="form-control" id="start_price" name="start_price" required>
+        <span class="input-group-text">руб.</span>
+    </div>
+    <div class="mb-3">
+        <label for="duration_value" class="form-label">Длительность аукциона</label>
+        <div class="input-group">
+            <input type="number" min="1" class="form-control" id="duration_value" name="duration_value" required>
+            <select class="form-select" id="duration_type" name="duration_type" required>
+                <option value="minutes">Минуты</option>
+                <option value="hours" selected>Часы</option>
+                <option value="days">Дни</option>
+            </select>
+        </div>
+    </div>
+    <div class="mb-3">
+        <label for="start_delay" class="form-label">Задержка старта (часы, 0 для немедленного старта)</label>
+        <input type="number" min="0" class="form-control" id="start_delay" name="start_delay" value="0" required>
+    </div>
+    <div class="mb-3">
+        <label for="image" class="form-label">Изображение</label>
+        <input type="file" class="form-control" id="image" name="image" accept="image/*">
+    </div>
+    <button type="submit" class="btn btn-primary">Добавить</button>
+</form>
+<script>
+function formatNumberWithSpaces(numberStr) {
+    numberStr = numberStr.replace(/^0+/, '') || '0';
+    let result = '';
+    for (let i = numberStr.length - 1, count = 0; i >= 0; i--) {
+        if (count > 0 && count % 3 === 0) {
+            result = ' ' + result;
+        }
+        result = numberStr[i] + result;
+        count++;
+    }
+    return result;
+}
+
+document.getElementById('start_price').addEventListener('input', function(e) {
+    let input = e.target;
+    let cursorPos = input.selectionStart;
+    let rawValue = input.value.replace(/[^\d.]/g, '');
+
+    let parts = rawValue.split('.');
+    let integerPart = parts[0] || '';
+    if (integerPart.length > 15) {
+        integerPart = integerPart.slice(0, 15);
+    }
+    let decimalPart = parts.length > 1 ? '.' + parts[1].slice(0, 2) : '';
+
+    let formattedInteger = formatNumberWithSpaces(integerPart);
+
+    let formattedValue = formattedInteger + decimalPart;
+    
+    let cleanValue = integerPart + decimalPart;
+    let cleanCursorPos = cursorPos - (input.value.slice(0, cursorPos).match(/\s/g) || []).length;
+    if (cleanCursorPos < 0) cleanCursorPos = 0;
+
+    input.value = formattedValue;
+
+    let newCursorPos = 0;
+    let cleanIndex = 0;
+    for (let i = 0; i < formattedValue.length && cleanIndex < cleanCursorPos; i++) {
+        if (/[\d.]/.test(formattedValue[i])) {
+            cleanIndex++;
+        }
+        newCursorPos = i + 1;
+    }
+
+    if (cleanCursorPos >= cleanValue.length) {
+        newCursorPos = formattedValue.length;
+    }
+
+    input.setSelectionRange(newCursorPos, newCursorPos);
+});
+
+document.querySelector('form').addEventListener('submit', function(e) {
+    let input = document.getElementById('start_price');
+    input.value = input.value.replace(/\s/g, '');
+});
+</script>
+{% endblock %}
