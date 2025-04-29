@@ -17,5 +17,19 @@
 ## Установка
 1. Клонируйте репозиторий:
    ```bash
-   git clone https://github.com/your-username/art-auction.git
+   git clone https://github.com/TwelveHeavens/art-auction.git
    cd art-auction
+
+2. Создайте виртуально окружение:
+    python -m venv venv
+    source venv/bin/activate  # Linux/Mac
+    venv\Scripts\activate     # Windows
+
+3. Установите зависимости:
+    pip install -r requirements.txt
+
+4. Запустите приложение:
+    python app.py
+
+## Развёртывание
+Проект развёрнут на Render [ссылка]
