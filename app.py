@@ -8,12 +8,13 @@ from datetime import datetime, timedelta
 import pytz
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key'  # Замените на свой секретный ключ
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-secret-key-for-local')
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(BASE_DIR, 'instance', 'auction.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Максимум 16MB для изображений
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
