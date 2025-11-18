@@ -1,18 +1,57 @@
 import os
+from datetime import datetime, timedelta
+
+import pytz
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, flash
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta
-import pytz
+
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DOTENV_PATH = os.path.join(BASE_DIR, '.env')
+if os.path.exists(DOTENV_PATH):
+    load_dotenv(DOTENV_PATH)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-secret-key-for-local')
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
 os.makedirs(INSTANCE_DIR, exist_ok=True)  # Создаём папку instance/
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(INSTANCE_DIR, "auction.db")}'
+
+# Базовая SQLite БД (fallback)
+sqlite_path = f"sqlite:///{os.path.join(INSTANCE_DIR, 'auction.db')}"
+
+# Основная БД берётся из переменной окружения DATABASE_URL (PostgreSQL),
+# при её отсутствии используется SQLite. Дополнительно удаляем неразрывные
+# пробелы, которые могут появиться при копировании строки из редактора/браузера.
+def _sanitize_database_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    # Удаляем все не-ASCII символы (неразрывные пробелы и т.п.) и пробелы по краям
+    ascii_only = ''.join(ch for ch in url if ord(ch) < 128)
+    return ascii_only.strip() or None
+
+
+raw_database_url = os.getenv('DATABASE_URL')
+cleaned_database_url = _sanitize_database_url(raw_database_url)
+
+def _ensure_psycopg_driver(url: str | None) -> str | None:
+    if not url:
+        return None
+    if url.startswith('postgresql://'):
+        return 'postgresql+psycopg://' + url[len('postgresql://'):]
+    return url
+
+cleaned_database_url = _ensure_psycopg_driver(cleaned_database_url)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = cleaned_database_url or sqlite_path
+db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+non_ascii_positions = [(idx, hex(ord(ch))) for idx, ch in enumerate(db_uri) if ord(ch) >= 128]
+print(f"Используемая БД: {db_uri!r}")
+print(f"Длина строки подключения: {len(db_uri)}")
+print(f"Непечатные символы (позиция, код): {non_ascii_positions}")
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
@@ -93,10 +132,6 @@ class Bid(db.Model):
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
-
-# Создание базы данных
-with app.app_context():
-    db.create_all()
 
 @app.route('/')
 def index():
@@ -281,4 +316,10 @@ def profile():
     return render_template('profile.html', profile=profile, lots_created=lots_created, bids_made=bids_made, lots_won=lots_won, now_moscow=now_moscow)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Для локальной разработки на SQLite автоматически создаём таблицы.
+    # Для PostgreSQL используем Alembic миграции (alembic upgrade head).
+    if os.getenv('DATABASE_URL') is None:
+        with app.app_context():
+            db.create_all()
+
+    app.run(debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true')
