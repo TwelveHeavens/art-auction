@@ -1,18 +1,54 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>{{ lot.title }}</h1>
+{% if current_user.is_authenticated and lot.user_id == current_user.id and lot.can_edit() %}
+  <div class="dropdown float-end">
+    <button class="btn btn-link text-muted p-0" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+      <i class="bi bi-three-dots-vertical fs-4"></i>
+    </button>
+    <ul class="dropdown-menu">
+      <li><a class="dropdown-item" href="{{ url_for('edit_lot', lot_id=lot.id) }}">✏️ Редактировать</a></li>
+      <li>
+        <form action="{{ url_for('delete_lot', lot_id=lot.id) }}" method="POST" class="d-block">
+          <button type="submit" class="dropdown-item text-danger"
+                  onclick="return confirm('Вы уверены, что хотите удалить этот лот?')">
+            🗑️ Удалить
+          </button>
+        </form>
+      </li>
+    </ul>
+  </div>
+{% endif %}
 <div class="row">
     <div class="col-md-6">
-        {% if lot.image %}
-            <img src="{{ url_for('static', filename='uploads/' + lot.image) }}" class="img-fluid" alt="{{ lot.title }}">
+        {% if lot.images %}
+        <div id="lotCarousel" class="carousel slide mb-4" data-bs-ride="carousel">
+            <div class="carousel-inner">
+            {% for image in lot.images %}
+                <div class="carousel-item {% if loop.first %}active{% endif %}">
+                <img src="{{ image.url() }}" class="d-block w-100" alt="{{ lot.title }}">
+                </div>
+            {% endfor %}
+            </div>
+            {% if lot.images|length > 1 %}
+            <button class="carousel-control-prev" type="button" data-bs-target="#lotCarousel" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#lotCarousel" data-bs-slide="next">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+            </button>
+            {% endif %}
+        </div>
+        {% else %}
+        <img src="https://via.placeholder.com/600x400?text=No+Image" class="img-fluid mb-4" alt="{{ lot.title }}">
         {% endif %}
     </div>
     <div class="col-md-6">
         <p><strong>Описание:</strong> {{ lot.description }}</p>
         <p><strong>Текущая ставка:</strong> {{ "{:,.2f}".format(lot.current_price) }} руб.</p>
         <p><strong>Начальная цена:</strong> {{ "{:,.2f}".format(lot.start_price) }} руб.</p>
-        <p><strong>Время начала:</strong> {{ lot.start_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }}</p>
-        <p><strong>Время окончания:</strong> {{ lot.end_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        <p><strong>Время начала:</strong> {{ lot.start_time_moscow().strftime('%d-%m-%Y %H:%M:%S') }}</p>
+        <p><strong>Время окончания:</strong> {{ lot.end_time_moscow().strftime('%d-%m-%Y %H:%M:%S') }}</p>
         {% if lot.is_active() %}
             <p><strong>Статус:</strong> Активен</p>
             {% if current_user.is_authenticated %}
@@ -49,7 +85,7 @@
         {% if bids %}
             <ul>
                 {% for bid in bids %}
-                    <li>{{ "{:,.2f}".format(bid.amount) }} руб. ({{ bid.created_at_moscow().strftime('%Y-%m-%d %H:%M:%S') }})</li>
+                    <li>{{ "{:,.2f}".format(bid.amount) }} руб. ({{ bid.created_at_moscow().strftime('%d-%m-%Y %H:%M:%S') }})</li>
                 {% endfor %}
             </ul>
         {% else %}

@@ -8,19 +8,28 @@
     </div>
     <div class="mb-3">
         <label for="description" class="form-label">Описание</label>
-        <textarea class="form-control" id="description" name="description" required></textarea>
+        <textarea class="form-control" id="description" name="description" rows="4" required></textarea>
     </div>
     <div class="mb-3">
         <label for="start_price" class="form-label">Начальная цена</label>
+        <div class="input-group">
+            <input type="text" class="form-control" id="start_price" name="start_price" required>
+            <span class="input-group-text">₽</span>
+        </div>
+        <div class="form-text">Цена будет автоматически отформатирована.</div>
     </div>
-    <div class="mb-3 input-group">
-        <input type="text" class="form-control" id="start_price" name="start_price" required>
-        <span class="input-group-text">руб.</span>
+
+    <!-- НОВОЕ: выбор даты и времени -->
+    <div class="mb-3">
+        <label for="start_time" class="form-label">Дата и время начала аукциона</label>
+        <input type="datetime-local" class="form-control" id="start_time" name="start_time" required>
+        <div class="form-text">Аукцион начнётся именно в это время.</div>
     </div>
+
     <div class="mb-3">
         <label for="duration_value" class="form-label">Длительность аукциона</label>
         <div class="input-group">
-            <input type="number" min="1" class="form-control" id="duration_value" name="duration_value" required>
+            <input type="number" min="1" class="form-control" id="duration_value" name="duration_value" value="1" required>
             <select class="form-select" id="duration_type" name="duration_type" required>
                 <option value="minutes">Минуты</option>
                 <option value="hours" selected>Часы</option>
@@ -28,16 +37,17 @@
             </select>
         </div>
     </div>
+
+    <!-- НОВОЕ: множественная загрузка -->
     <div class="mb-3">
-        <label for="start_delay" class="form-label">Задержка старта (часы, 0 для немедленного старта)</label>
-        <input type="number" min="0" class="form-control" id="start_delay" name="start_delay" value="0" required>
+        <label for="images" class="form-label">Изображения лота (можно выбрать несколько)</label>
+        <input class="form-control" type="file" id="images" name="images" accept="image/png, image/jpeg" multiple required>
+        <div class="form-text">Поддерживаются форматы: PNG, JPG. Максимум 5 МБ на файл.</div>
     </div>
-    <div class="mb-3">
-        <label for="image" class="form-label">Изображение</label>
-        <input type="file" class="form-control" id="image" name="image" accept="image/*">
-    </div>
-    <button type="submit" class="btn btn-primary">Добавить</button>
+
+    <button type="submit" class="btn btn-primary">Добавить лот</button>
 </form>
+
 <script>
 function formatNumberWithSpaces(numberStr) {
     numberStr = numberStr.replace(/^0+/, '') || '0';
@@ -59,37 +69,32 @@ document.getElementById('start_price').addEventListener('input', function(e) {
 
     let parts = rawValue.split('.');
     let integerPart = parts[0] || '';
-    if (integerPart.length > 15) {
-        integerPart = integerPart.slice(0, 15);
-    }
+    if (integerPart.length > 15) integerPart = integerPart.slice(0, 15);
     let decimalPart = parts.length > 1 ? '.' + parts[1].slice(0, 2) : '';
 
     let formattedInteger = formatNumberWithSpaces(integerPart);
-
     let formattedValue = formattedInteger + decimalPart;
-    
-    let cleanValue = integerPart + decimalPart;
+
+    // Сохраняем позицию курсора
     let cleanCursorPos = cursorPos - (input.value.slice(0, cursorPos).match(/\s/g) || []).length;
     if (cleanCursorPos < 0) cleanCursorPos = 0;
 
     input.value = formattedValue;
 
+    // Восстанавливаем курсор
     let newCursorPos = 0;
     let cleanIndex = 0;
     for (let i = 0; i < formattedValue.length && cleanIndex < cleanCursorPos; i++) {
-        if (/[\d.]/.test(formattedValue[i])) {
-            cleanIndex++;
-        }
+        if (/[\d.]/.test(formattedValue[i])) cleanIndex++;
         newCursorPos = i + 1;
     }
-
-    if (cleanCursorPos >= cleanValue.length) {
+    if (cleanCursorPos >= integerPart.length + (decimalPart ? 1 + decimalPart.length : 0)) {
         newCursorPos = formattedValue.length;
     }
-
     input.setSelectionRange(newCursorPos, newCursorPos);
 });
 
+// Убираем пробелы перед отправкой
 document.querySelector('form').addEventListener('submit', function(e) {
     let input = document.getElementById('start_price');
     input.value = input.value.replace(/\s/g, '');

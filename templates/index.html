@@ -1,33 +1,136 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Активные лоты</h1>
-<div class="row">
-    {% for lot in lots %}
-        <div class="col-md-4 mb-4">
-            <div class="card">
-                {% if lot.image %}
-                    <img src="{{ url_for('static', filename='uploads/' + lot.image) }}" class="card-img-top" alt="{{ lot.title }}">
-                {% endif %}
-                <div class="card-body">
-                    <h5 class="card-title">{{ lot.title }}</h5>
-                    <p class="card-text">{{ lot.description }}</p>
-                    <p class="card-text">Текущая ставка: {{ "{:,.2f}".format(lot.current_price) }} руб.</p>
-                    <p class="card-text">
-                        <strong>Статус:</strong>
-                        {% if lot.is_active() %}
-                            Активен (до {{ lot.end_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }})
-                        {% else %}
-                            {% if lot.start_time_moscow() > now_moscow %}
-                                Ещё не начался (начнётся {{ lot.start_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }})
-                            {% else %}
-                                Завершён
-                            {% endif %}
-                        {% endif %}
-                    </p>
-                    <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-primary">Подробнее</a>
+
+<div class="d-flex align-items-center justify-content-center gap-2 mb-4">
+  {% if current_status == 'active' %}
+    <h1 class="d-inline-block">Активные лоты</h1>
+  {% elif current_status == 'pending' %}
+    <h1 class="d-inline-block">Не стартовавшие лоты</h1>
+  {% elif current_status == 'ended' %}
+    <h1 class="d-inline-block">Завершённые лоты</h1>
+  {% else %}
+    <h1 class="d-inline-block">Все лоты</h1>
+  {% endif %}
+
+  {% if lot_count > 0 %}
+    <div>
+      <span class="badge bg-light text-dark fs-5 px-3 py-1 rounded-pill shadow-sm">
+        {{ lot_count }}
+      </span>
+    </div>
+  {% else %}
+    <div>
+      <span class="badge bg-secondary text-white fs-6 px-3 py-1 rounded-pill">Нет лотов</span>
+    </div>
+  {% endif %}
+</div>
+<!-- Кнопка "Фильтр" -->
+<button class="btn btn-outline-secondary mb-4" type="button" data-bs-toggle="collapse" data-bs-target="#filterPanel" aria-expanded="false">
+    Фильтр
+</button>
+
+<!-- Панель фильтра (скрыта по умолчанию) -->
+<div class="collapse mb-4" id="filterPanel">
+    <div class="card card-body">
+        <form method="GET">
+            <div class="row">
+                <!-- Статус -->
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Статус</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="status" value="all" id="status_all" {% if current_status == 'all' %}checked{% endif %}>
+                        <label class="form-check-label" for="status_all">Все</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="status" value="active" id="status_active" {% if current_status == 'active' %}checked{% endif %}>
+                        <label class="form-check-label" for="status_active">Активные</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="status" value="pending" id="status_pending" {% if current_status == 'pending' %}checked{% endif %}>
+                        <label class="form-check-label" for="status_pending">Не начатые</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="status" value="ended" id="status_ended" {% if current_status == 'ended' %}checked{% endif %}>
+                        <label class="form-check-label" for="status_ended">Завершённые</label>
+                    </div>
+                </div>
+
+                <!-- Сортировка -->
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Сортировка</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="sort" value="newest" id="sort_newest" {% if current_sort == 'newest' %}checked{% endif %}>
+                        <label class="form-check-label" for="sort_newest">Сначала новые</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="sort" value="oldest" id="sort_oldest" {% if current_sort == 'oldest' %}checked{% endif %}>
+                        <label class="form-check-label" for="sort_oldest">Сначала старые</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="sort" value="price_low" id="sort_price_low" {% if current_sort == 'price_low' %}checked{% endif %}>
+                        <label class="form-check-label" for="sort_price_low">Сначала дешёвые</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="sort" value="price_high" id="sort_price_high" {% if current_sort == 'price_high' %}checked{% endif %}>
+                        <label class="form-check-label" for="sort_price_high">Сначала дорогие</label>
+                    </div>
                 </div>
             </div>
-        </div>
+            <button type="submit" class="btn btn-primary">Применить</button>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">Сбросить</a>
+        </form>
+    </div>
+</div>
+
+<div class="row">
+    {% for lot in lots %}
+            <div class="col-md-4 mb-4">
+                <div class="lot-card">
+                    <div class="lot-image-wrapper">
+                        <!-- Новый код: показываем первое изображение или заглушку -->
+                        {% if lot.images %}
+                        <img src="{{ lot.images[0].url() }}" class="lot-image" alt="{{ lot.title }}">
+                        {% else %}
+                        <img src="{{ url_for('static', filename='default.jpg') }}" class="lot-image" alt="Нет изображения">
+                        {% endif %}
+                    </div>
+                    <div class="lot-card-body">
+                        <h5 class="lot-title">{{ lot.title }}</h5>
+                        <p class="lot-description">{{ lot.description[:150] }}{% if lot.description|length > 150 %}...{% endif %}</p>
+                        <div class="lot-price">{{ "{:,.0f}".format(lot.current_price) }} ₽</div>
+                        
+                        {% if lot.end_time_moscow() < now_moscow %}
+                            <span class="lot-status status-ended">Завершён</span>
+                        {% elif lot.start_time_moscow() > now_moscow %}
+                            <span class="lot-status status-pending">Начнётся позже</span>
+                        {% else %}
+                            <span class="lot-status status-active">Активен</span>
+                        {% endif %}
+                        
+                        <div class="lot-card-footer">
+                            {% if lot.start_time_moscow() > now_moscow %}
+                                <small class="text-muted">Начало: {{ lot.start_time_moscow().strftime('%d %b %H:%M') }}</small>
+                            {% elif lot.end_time_moscow() > now_moscow %}
+                                <!-- Простой расчёт "до окончания" на стороне Python -->
+                                {% set delta = lot.end_time_moscow() - now_moscow %}
+                                {% set total_seconds = delta.total_seconds() %}
+                                {% if total_seconds > 3600 %}
+                                    {% set hours = (total_seconds // 3600) | int %}
+                                    <small class="text-muted">До окончания: ~{{ hours }} ч</small>
+                                {% elif total_seconds > 60 %}
+                                    {% set minutes = (total_seconds // 60) | int %}
+                                    <small class="text-muted">До окончания: ~{{ minutes }} мин</small>
+                                {% else %}
+                                    <small class="text-muted">Завершится сейчас!</small>
+                                {% endif %}
+                            {% else %}
+                                <small class="text-muted">Аукцион завершён</small>
+                            {% endif %}
+                            <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-outline-primary btn-sm">Подробнее</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
     {% else %}
         <p>Лотов пока нет.</p>
     {% endfor %}

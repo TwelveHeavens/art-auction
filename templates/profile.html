@@ -1,34 +1,58 @@
 {% extends "base.html" %}
+
 {% block content %}
-<h1>Мой профиль</h1>
-<div class="row">
-    <div class="col-md-4">
-        {% if profile.profile_image %}
-            <img src="{{ url_for('static', filename='uploads/' + profile.profile_image) }}" class="img-fluid rounded-circle mb-3" alt="Profile Image" style="max-width: 200px;">
-        {% else %}
-            <img src="https://via.placeholder.com/200" class="img-fluid rounded-circle mb-3" alt="Profile Image">
-        {% endif %}
-        <h4>{{ current_user.username }}</h4>
+<div class="d-flex flex-column align-items-center mb-5">
+  <!-- Круглое фото -->
+  <div class="mb-4">
+    {% if profile.profile_image %}
+      <img src="{{ url_for('static', filename='uploads/' + profile.profile_image) }}"
+           class="rounded-circle border border-3 border-light shadow"
+           alt="Аватар"
+           width="150"
+           height="150"
+           style="object-fit: cover;">
+    {% else %}
+      <div class="rounded-circle bg-light d-flex align-items-center justify-content-center border border-3 border-light shadow"
+           style="width: 150px; height: 150px;">
+        <i class="bi bi-person text-muted" style="font-size: 4rem;"></i>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Имя пользователя -->
+  <h2 class="mb-2">{{ current_user.username }}</h2>
+
+  <!-- Статистика -->
+  <div class="d-flex gap-4 mb-4 text-center">
+    <div>
+      <div class="fw-bold fs-4">{{ lots_created }}</div>
+      <small class="text-muted">Лотов</small>
     </div>
-    <div class="col-md-8">
-        <h3>Информация</h3>
-        <p><strong>Биография:</strong> {{ profile.bio if profile.bio else 'Не указана' }}</p>
-        <h3>Статистика</h3>
-        <p><strong>Создано лотов:</strong> {{ lots_created }}</p>
-        <p><strong>Сделано ставок:</strong> {{ bids_made }}</p>
-        <p><strong>Выиграно лотов:</strong> {{ lots_won }}</p>
-        <h3>Редактировать профиль</h3>
-        <form method="POST" enctype="multipart/form-data">
-            <div class="mb-3">
-                <label for="bio" class="form-label">Биография</label>
-                <textarea class="form-control" id="bio" name="bio">{{ profile.bio if profile.bio else '' }}</textarea>
-            </div>
-            <div class="mb-3">
-                <label for="profile_image" class="form-label">Фотография профиля</label>
-                <input type="file" class="form-control" id="profile_image" name="profile_image" accept="image/*">
-            </div>
-            <button type="submit" class="btn btn-primary">Сохранить</button>
-        </form>
+    <div>
+      <div class="fw-bold fs-4">{{ bids_made }}</div>
+      <small class="text-muted">Ставок</small>
     </div>
+    <div>
+      <div class="fw-bold fs-4">{{ lots_won }}</div>
+      <small class="text-muted">Побед</small>
+    </div>
+  </div>
+
+  <!-- Биография -->
+  {% if profile.bio %}
+    <div class="text-muted mb-4" style="max-width: 600px; text-align: center;">
+      {{ profile.bio }}
+    </div>
+  {% endif %}
+
+  <!-- Кнопки действий -->
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('edit_profile') }}" class="btn btn-outline-primary">
+      <i class="bi bi-pencil me-1"></i>Редактировать профиль
+    </a>
+    <a href="{{ url_for('my_auctions') }}" class="btn btn-outline-secondary">
+      Мои лоты
+    </a>
+  </div>
 </div>
 {% endblock %}

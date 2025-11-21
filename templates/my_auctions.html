@@ -5,33 +5,48 @@
     <div class="row">
         {% for lot in my_lots %}
             <div class="col-md-4 mb-4">
-                <div class="card">
-                    {% if lot.image %}
-                        <img src="{{ url_for('static', filename='uploads/' + lot.image) }}" class="card-img-top" alt="{{ lot.title }}">
-                    {% endif %}
-                    <div class="card-body">
-                        <h5 class="card-title">{{ lot.title }}</h5>
-                        <p class="card-text">{{ lot.description }}</p>
-                        <p class="card-text">Текущая ставка: {{ "{:,.2f}".format(lot.current_price) }} руб.</p>
-                        <p class="card-text">
-                            <strong>Статус:</strong>
-                            {% if lot.is_active() %}
-                                Активен (до {{ lot.end_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }})
-                            {% else %}
-                                {% if lot.start_time_moscow() > now_moscow %}
-                                    Ещё не начался (начнётся {{ lot.start_time_moscow().strftime('%Y-%m-%d %H:%M:%S') }})
+                <div class="lot-card">
+                    <div class="lot-image-wrapper"> 
+                        {% if lot.images %}
+                        <img src="{{ lot.images[0].url() }}" class="lot-image" alt="{{ lot.title }}">
+                        {% else %}
+                        <img src="{{ url_for('static', filename='default.jpg') }}" class="lot-image" alt="Нет изображения">
+                        {% endif %} 
+                    </div>
+                    <div class="lot-card-body">
+                        <h5 class="lot-title">{{ lot.title }}</h5>
+                        <p class="lot-description">{{ lot.description[:150] }}{% if lot.description|length > 150 %}...{% endif %}</p>
+                        <div class="lot-price">{{ "{:,.0f}".format(lot.current_price) }} ₽</div>
+                        
+                        {% if lot.end_time_moscow() < now_moscow %}
+                            <span class="lot-status status-ended">Завершён</span>
+                        {% elif lot.start_time_moscow() > now_moscow %}
+                            <span class="lot-status status-pending">Начнётся позже</span>
+                        {% else %}
+                            <span class="lot-status status-active">Активен</span>
+                        {% endif %}
+                        
+                        <div class="lot-card-footer">
+                            {% if lot.start_time_moscow() > now_moscow %}
+                                <small class="text-muted">Начало: {{ lot.start_time_moscow().strftime('%d %b %H:%M') }}</small>
+                            {% elif lot.end_time_moscow() > now_moscow %}
+                                <!-- Простой расчёт "до окончания" на стороне Python -->
+                                {% set delta = lot.end_time_moscow() - now_moscow %}
+                                {% set total_seconds = delta.total_seconds() %}
+                                {% if total_seconds > 3600 %}
+                                    {% set hours = (total_seconds // 3600) | int %}
+                                    <small class="text-muted">До окончания: ~{{ hours }} ч</small>
+                                {% elif total_seconds > 60 %}
+                                    {% set minutes = (total_seconds // 60) | int %}
+                                    <small class="text-muted">До окончания: ~{{ minutes }} мин</small>
                                 {% else %}
-                                    Завершён
-                                    {% set winner = lot.get_winner() %}
-                                    {% if winner %}
-                                        (Победитель: {{ winner.username }})
-                                    {% else %}
-                                        (Ставок не было)
-                                    {% endif %}
+                                    <small class="text-muted">Завершится сейчас!</small>
                                 {% endif %}
+                            {% else %}
+                                <small class="text-muted">Аукцион завершён</small>
                             {% endif %}
-                        </p>
-                        <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-primary">Подробнее</a>
+                            <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-outline-primary btn-sm">Подробнее</a>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Редактировать профиль</h2>
+
+<form method="POST" enctype="multipart/form-data">
+  <div class="mb-3">
+    <label for="bio" class="form-label">О себе</label>
+    <textarea class="form-control" id="bio" name="bio" rows="4">{{ profile.bio or '' }}</textarea>
+  </div>
+
+<div class="mb-3">
+  <label for="profile_image" class="form-text">Поддерживаются форматы: PNG, JPG, JPEG. Максимум 5 МБ.</label>
+  <input class="form-control" type="file" id="profile_image" name="profile_image" accept="image/png, image/jpeg, image/jpg">
+  {% if profile.profile_image %}
+    <div class="mt-2">
+      <img src="{{ url_for('static', filename='uploads/' + profile.profile_image) }}" 
+           class="rounded" width="100" alt="Текущее фото">
+    </div>
+  {% endif %}
+</div>
+
+  <button type="submit" class="btn btn-primary">Сохранить</button>
+  <a href="{{ url_for('profile') }}" class="btn btn-secondary">Отмена</a>
+</form>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Редактировать лот</h2>
+<form method="post" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="title" class="form-label">Название лота</label>
+        <input type="text" class="form-control" id="title" name="title" value="{{ lot.title }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label for="description" class="form-label">Описание</label>
+        <textarea class="form-control" id="description" name="description" rows="4" required>{{ lot.description }}</textarea>
+    </div>
+
+    <div class="mb-3">
+        <label for="start_price" class="form-label">Стартовая цена (₽)</label>
+        <input type="number" step="0.01" class="form-control" id="start_price" name="start_price" value="{{ lot.start_price }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Отложить старт (в часах)</label>
+        <input type="number" class="form-control" name="start_delay" value="0" min="0">
+        <div class="form-text">0 — начать сразу</div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Длительность аукциона</label>
+        <div class="input-group">
+            <input type="number" class="form-control" name="duration_value" value="1" min="1">
+            <select class="form-select" name="duration_type">
+                <option value="minutes">минут</option>
+                <option value="hours" selected>часов</option>
+                <option value="days">дней</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="mb-3">
+        <label for="image" class="form-label">Изображение лота (PNG, JPG, до 5 МБ)</label>
+        <input class="form-control" type="file" id="image" name="image" accept="image/png, image/jpeg, image/jpg">
+        <div class="form-text">Для сохранения выбранного ранее фото оставьте поле пустым</div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+    <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-secondary">Отмена</a>
+</form>
+{% endblock %}

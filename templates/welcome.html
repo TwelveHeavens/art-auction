@@ -21,16 +21,38 @@
             {% for lot in featured_lots %}
                 <div class="carousel-item {% if loop.first %}active{% endif %}">
                     <div class="row justify-content-center">
-                        <div class="col-md-6">
-                            <div class="card">
-                                {% if lot.image %}
-                                    <img src="{{ url_for('static', filename='uploads/' + lot.image) }}" class="card-img-top" alt="{{ lot.title }}">
-                                {% endif %}
-                                <div class="card-body">
-                                    <h5 class="card-title">{{ lot.title }}</h5>
-                                    <p class="card-text">{{ lot.description }}</p>
-                                    <p class="card-text">Текущая ставка: {{ "{:,.2f}".format(lot.current_price) }} руб.</p>
-                                    <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-primary">Подробнее</a>
+                        <div class="col-md-4 mb-4">
+                            <div class="lot-card">
+                                <div class="lot-image-wrapper">
+                                    {% if lot.images %}
+                                    <img src="{{ lot.images[0].url() }}" class="lot-image" alt="{{ lot.title }}">
+                                    {% else %}
+                                    <img src="{{ url_for('static', filename='default.jpg') }}" class="lot-image" alt="Нет изображения">
+                                    {% endif %}
+                                </div>
+                                <div class="lot-card-body">
+                                    <h5 class="lot-title">{{ lot.title }}</h5>
+                                    <p class="lot-description">{{ lot.description[:150] }}{% if lot.description|length > 150 %}...{% endif %}</p>
+                                    <div class="lot-price">{{ "{:,.0f}".format(lot.current_price) }} ₽</div>
+                                    
+                                    {% if lot.end_time_moscow() < now_moscow %}
+                                        <span class="lot-status status-ended">Завершён</span>
+                                    {% elif lot.start_time_moscow() > now_moscow %}
+                                        <span class="lot-status status-pending">Начнётся позже</span>
+                                    {% else %}
+                                        <span class="lot-status status-active">Активен</span>
+                                    {% endif %}
+                                    
+                                    <div class="lot-card-footer">
+                                        {% if lot.start_time_moscow() > now_moscow %}
+                                            <small class="text-muted">Начало: {{ lot.start_time_moscow().strftime('%d %b %H:%M') }}</small>
+                                        {% elif lot.end_time_moscow() > now_moscow %}
+                                            <small class="text-muted">{{ lot.time_until_str }}</small>
+                                        {% else %}
+                                            <small class="text-muted">Аукцион завершён</small>
+                                        {% endif %}
+                                        <a href="{{ url_for('lot_detail', lot_id=lot.id) }}" class="btn btn-outline-primary btn-sm">Подробнее</a>
+                                    </div>
                                 </div>
                             </div>
                         </div>

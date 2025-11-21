@@ -1,13 +1,43 @@
 import os
-from datetime import datetime, timedelta
-
 import pytz
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import imghdr
+import magic
+
+def allowed_image(filename):
+    """Проверяет, разрешён ли формат изображения."""
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def is_valid_image(filepath):
+    mime = magic.from_file(filepath, mime=True)
+    return mime in ['image/png', 'image/jpeg', 'image/gif']
+
+def format_time_until(end_time_moscow, now_moscow):
+    """Возвращает строку: 'До окончания: ~2 ч' или 'Завершится сейчас!'"""
+    if end_time_moscow <= now_moscow:
+        return "Аукцион завершён"
+    
+    delta = end_time_moscow - now_moscow
+    total_seconds = int(delta.total_seconds())
+    
+    if total_seconds <= 0:
+        return "Завершится сейчас!"
+    elif total_seconds > 3600:
+        hours = total_seconds // 3600
+        return f"До окончания: ~{hours} ч"
+    elif total_seconds > 60:
+        minutes = total_seconds // 60
+        return f"До окончания: ~{minutes} мин"
+    else:
+        return "Завершится сейчас!"
+
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DOTENV_PATH = os.path.join(BASE_DIR, '.env')
@@ -54,8 +84,9 @@ print(f"Непечатные символы (позиция, код): {non_ascii
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -90,7 +121,7 @@ class Lot(db.Model):
     description = db.Column(db.Text, nullable=False)
     start_price = db.Column(db.Float, nullable=False)
     current_price = db.Column(db.Float, nullable=False)
-    image = db.Column(db.String(100), nullable=True)
+    images = db.relationship('LotImage', backref='lot', lazy=True, cascade='all, delete-orphan')
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.UTC))
     start_time = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(pytz.UTC))
@@ -101,6 +132,11 @@ class Lot(db.Model):
         end_time_aware = self.end_time.replace(tzinfo=pytz.UTC)
         now = datetime.now(pytz.UTC)
         return start_time_aware <= now < end_time_aware
+    
+    def can_edit(self):
+        now = datetime.now(pytz.UTC)
+        start_time_aware = self.start_time.replace(tzinfo=pytz.UTC)
+        return start_time_aware > now
 
     def get_winner(self):
         if not self.is_active() and self.end_time.replace(tzinfo=pytz.UTC) <= datetime.now(pytz.UTC):
@@ -117,6 +153,7 @@ class Lot(db.Model):
 
     def end_time_moscow(self):
         return self.end_time.replace(tzinfo=pytz.UTC).astimezone(MOSCOW_TZ)
+    
 
 # Модель ставки
 class Bid(db.Model):
@@ -137,14 +174,65 @@ def load_user(user_id):
 def index():
     if not current_user.is_authenticated:
         return redirect(url_for('welcome'))
-    lots = Lot.query.order_by(Lot.created_at.desc()).all()
+    # Получаем параметры из URL
+    status = request.args.get('status', 'all')  # all, active, pending, ended
+    sort = request.args.get('sort', 'newest')   # newest, oldest, price_low, price_high
+
+    query = Lot.query
+
+    now_utc = datetime.now(pytz.UTC)
+
+    # Фильтрация по статусу
+    if status == 'active':
+        query = query.filter(Lot.start_time <= now_utc, Lot.end_time > now_utc)
+    elif status == 'pending':
+        query = query.filter(Lot.start_time > now_utc)
+    elif status == 'ended':
+        query = query.filter(Lot.end_time <= now_utc)
+    else: 'all' # — не фильтруем
+
+    # Сортировка
+    if sort == 'oldest':
+        query = query.order_by(Lot.created_at.asc())
+    elif sort == 'price_low':
+        query = query.order_by(Lot.current_price.asc())
+    elif sort == 'price_high':
+        query = query.order_by(Lot.current_price.desc())
+    else:  # newest
+        query = query.order_by(Lot.created_at.desc())
+
+    lots = query.all()
+    lot_count = len(lots)
     now_moscow = datetime.now(MOSCOW_TZ)
-    return render_template('index.html', lots=lots, moscow_tz=MOSCOW_TZ, now_moscow=now_moscow)
+
+    return render_template(
+        'index.html',
+        lots=lots,
+        moscow_tz=MOSCOW_TZ,
+        now_moscow=now_moscow,
+        current_status=status,
+        current_sort=sort,
+        lot_count=lot_count
+    )
+
+class LotImage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(100), nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey('lot.id'), nullable=False)
+
+    def url(self):
+        return url_for('static', filename='uploads/' + self.filename)
 
 @app.route('/welcome')
 def welcome():
+    now_moscow = datetime.now(MOSCOW_TZ)
     featured_lots = Lot.query.filter(Lot.end_time > datetime.now(pytz.UTC)).order_by(Lot.created_at.desc()).limit(3).all()
-    return render_template('welcome.html', featured_lots=featured_lots, moscow_tz=MOSCOW_TZ)
+    
+    # Добавим вычисления для каждого лота
+    for lot in featured_lots:
+        lot.time_until_str = format_time_until(lot.end_time_moscow(), now_moscow)
+    
+    return render_template('welcome.html', featured_lots=featured_lots, moscow_tz=MOSCOW_TZ, now_moscow=now_moscow)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -187,48 +275,81 @@ def logout():
 @login_required
 def add_lot():
     if request.method == 'POST':
+        # Получаем данные из формы
         title = request.form['title']
         description = request.form['description']
         start_price = float(request.form['start_price'].replace(' ', ''))
+
+        # === 1. Время старта (новая логика) ===
+        start_time_str = request.form['start_time']  # формат: "2025-11-21T15:30"
+        start_time_naive = datetime.strptime(start_time_str, '%Y-%m-%dT%H:%M')
+        start_time_moscow = MOSCOW_TZ.localize(start_time_naive)
+        start_time_utc = start_time_moscow.astimezone(pytz.UTC)
+
+        # === 2. Длительность ===
         duration_type = request.form['duration_type']
         duration_value = int(request.form['duration_value'])
-        start_delay = int(request.form.get('start_delay', 0))
 
         if duration_value < 1:
-            flash('Длительность аукциона должна быть не менее 1!')
+            flash('Длительность аукциона должна быть не менее 1!', 'danger')
             return redirect(url_for('add_lot'))
 
         if duration_type == 'minutes':
             delta = timedelta(minutes=duration_value)
         elif duration_type == 'hours':
             delta = timedelta(hours=duration_value)
-        else:
+        else:  # days
             delta = timedelta(days=duration_value)
 
-        start_time = datetime.now(MOSCOW_TZ) + timedelta(hours=start_delay)
-        start_time_utc = start_time.astimezone(pytz.UTC)
-        end_time = start_time + delta
-        end_time_utc = end_time.astimezone(pytz.UTC)
+        end_time_utc = start_time_utc + delta
 
-        file = request.files['image']
-        filename = None
-        if file and file.filename:
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        # === 3. Загрузка изображений ===
+        files = request.files.getlist('images')
+        saved_filenames = []
+
+        for file in files:
+            if file and file.filename:
+                if not allowed_image(file.filename):
+                    flash('Разрешены только изображения: PNG, JPG, JPEG.', 'danger')
+                    return redirect(url_for('add_lot'))
+
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+
+                if not is_valid_image(filepath):
+                    os.remove(filepath)
+                    flash('Один из файлов не является изображением.', 'danger')
+                    return redirect(url_for('add_lot'))
+
+                if os.path.getsize(filepath) > 10 * 1024 * 1024:
+                    os.remove(filepath)
+                    flash('Один из файлов слишком большой. Максимум 10 МБ.', 'danger')
+                    return redirect(url_for('add_lot'))
+
+                saved_filenames.append(filename)
+
+        # === 4. Создание лота ===
         lot = Lot(
             title=title,
             description=description,
             start_price=start_price,
             current_price=start_price,
-            image=filename,
             user_id=current_user.id,
             start_time=start_time_utc,
             end_time=end_time_utc
         )
         db.session.add(lot)
+        db.session.flush()  # Получаем lot.id
+
+        for filename in saved_filenames:
+            lot_image = LotImage(filename=filename, lot_id=lot.id)
+            db.session.add(lot_image)
+
         db.session.commit()
-        flash('Лот добавлен!')
+        flash('Лот добавлен!', 'success')
         return redirect(url_for('index'))
+
     return render_template('add_lot.html')
 
 @app.route('/lot/<int:lot_id>', methods=['GET', 'POST'])
@@ -258,6 +379,98 @@ def lot_detail(lot_id):
             flash('Ваша ставка должна быть выше текущей!')
         return redirect(url_for('lot_detail', lot_id=lot.id))
     return render_template('lot_detail.html', lot=lot, bids=bids, winner=winner, moscow_tz=MOSCOW_TZ, now_moscow=now_moscow)
+
+
+#  Функционал редактирования и удаления лота
+# Редактирование лота
+@app.route('/lot/<int:lot_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_lot(lot_id):
+    lot = Lot.query.get_or_404(lot_id)
+    if lot.user_id != current_user.id:
+        flash('Нельзя редактировать чужой лот.', 'danger')
+        return redirect(url_for('lot_detail', lot_id=lot_id))
+    if not lot.can_edit():
+        flash('Нельзя редактировать лот после начала аукциона.', 'warning')
+        return redirect(url_for('lot_detail', lot_id=lot_id))
+
+    if request.method == 'POST':
+        lot.title = request.form['title']
+        lot.description = request.form['description']
+        lot.start_price = float(request.form['start_price'].replace(' ', ''))
+        lot.current_price = lot.start_price  # сбрасываем текущую цену
+
+        # Обработка времени
+        start_delay = int(request.form.get('start_delay', 0))
+        duration_type = request.form['duration_type']
+        duration_value = int(request.form['duration_value'])
+
+        if duration_value < 1:
+            flash('Длительность аукциона должна быть не менее 1!')
+            return redirect(url_for('edit_lot', lot_id=lot_id))
+
+        if duration_type == 'minutes':
+            delta = timedelta(minutes=duration_value)
+        elif duration_type == 'hours':
+            delta = timedelta(hours=duration_value)
+        else:
+            delta = timedelta(days=duration_value)
+
+        # Новое время старта = сейчас + отсрочка
+        start_time = datetime.now(MOSCOW_TZ) + timedelta(hours=start_delay)
+        start_time_utc = start_time.astimezone(pytz.UTC)
+        end_time = start_time + delta
+        end_time_utc = end_time.astimezone(pytz.UTC)
+
+        lot.start_time = start_time_utc
+        lot.end_time = end_time_utc
+
+        # Обновление изображения (опционально)
+        file = request.files.get('image')
+        if file and file.filename:
+            if not allowed_image(file.filename):
+                flash('Разрешены только изображения: PNG, JPG, JPEG.', 'danger')
+                return redirect(url_for('edit_lot', lot_id=lot_id))
+
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+
+            if not is_valid_image(filepath):
+                os.remove(filepath)
+                flash('Файл не является изображением.', 'danger')
+                return redirect(url_for('edit_lot', lot_id=lot_id))
+
+            if os.path.getsize(filepath) > 10 * 1024 * 1024:
+                os.remove(filepath)
+                flash('Изображение слишком большое. Максимум 10 МБ.', 'danger')
+                return redirect(url_for('edit_lot', lot_id=lot_id))
+
+            lot.image = filename
+
+        db.session.commit()
+        flash('Лот успешно обновлён!', 'success')
+        return redirect(url_for('lot_detail', lot_id=lot_id))
+
+    return render_template('edit_lot.html', lot=lot)
+
+# Удаление лота
+@app.route('/lot/<int:lot_id>/delete', methods=['POST'])
+@login_required
+def delete_lot(lot_id):
+    lot = Lot.query.get_or_404(lot_id)
+    if lot.user_id != current_user.id:
+        flash('Нельзя удалить чужой лот.', 'danger')
+        return redirect(url_for('lot_detail', lot_id=lot_id))
+    if not lot.can_edit():
+        flash('Нельзя удалить лот после начала аукциона.', 'warning')
+        return redirect(url_for('lot_detail', lot_id=lot_id))
+
+    db.session.delete(lot)
+    db.session.commit()
+    flash('Лот удалён.', 'success')
+    return redirect(url_for('my_auctions'))
+
 
 @app.route('/my_wins')
 @login_required
@@ -315,11 +528,60 @@ def profile():
     now_moscow = datetime.now(MOSCOW_TZ)
     return render_template('profile.html', profile=profile, lots_created=lots_created, bids_made=bids_made, lots_won=lots_won, now_moscow=now_moscow)
 
+@app.route('/profile/edit', methods=['GET', 'POST'])
+@login_required
+def edit_profile():
+    profile = Profile.query.filter_by(user_id=current_user.id).first()
+    if not profile:
+        profile = Profile(user_id=current_user.id)
+        db.session.add(profile)
+        db.session.commit()
+
+    if request.method == 'POST':
+        bio = request.form.get('bio', '')
+        file = request.files.get('profile_image')
+
+        if file and file.filename:
+            # 1. Проверка расширения
+            if not allowed_image(file.filename):
+                flash('Разрешены только изображения: PNG, JPG, JPEG, GIF.', 'danger')
+                return redirect(url_for('edit_profile'))
+
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+            # 2. Сохраняем временно
+            file.save(filepath)
+
+            # 3. Проверка содержимого
+            if not is_valid_image(filepath):
+                os.remove(filepath)  # Удаляем подозрительный файл
+                flash('Файл не является изображением. Загрузите корректное изображение.', 'danger')
+                return redirect(url_for('edit_profile'))
+
+            # 4. Проверка размера (опционально, но app.config уже ограничивает)
+            if os.path.getsize(filepath) > 10 * 1024 * 1024:  # 5 МБ
+                os.remove(filepath)
+                flash('Изображение слишком большое. Максимум 10 МБ.', 'danger')
+                return redirect(url_for('edit_profile'))
+
+            profile.profile_image = filename
+
+        profile.bio = bio
+        db.session.commit()
+        flash('Профиль обновлён!', 'success')
+        return redirect(url_for('profile'))
+
+    return render_template('edit_profile.html', profile=profile)
+
+
+
 if __name__ == '__main__':
     # Для локальной разработки на SQLite автоматически создаём таблицы.
     # Для PostgreSQL используем Alembic миграции (alembic upgrade head).
     if os.getenv('DATABASE_URL') is None:
         with app.app_context():
+            
             db.create_all()
 
-    app.run(debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true')
+    app.run(debug=os.getenv('FLASK_DEBUG', 'True').lower() == 'true')
