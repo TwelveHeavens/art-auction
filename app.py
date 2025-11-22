@@ -576,12 +576,38 @@ def edit_profile():
 
 
 
-if __name__ == '__main__':
-    # Для локальной разработки на SQLite автоматически создаём таблицы.
-    # Для PostgreSQL используем Alembic миграции (alembic upgrade head).
-    if os.getenv('DATABASE_URL') is None:
-        with app.app_context():
-            
-            db.create_all()
+def apply_migrations():
+    """Применяет миграции Alembic при запуске (для Render)."""
+    from alembic.config import Config
+    from alembic import command
+    import sys
+    import os
 
-    app.run(debug=os.getenv('FLASK_DEBUG', 'True').lower() == 'true')
+    # Путь к alembic.ini
+    alembic_cfg_path = os.path.join(os.path.dirname(__file__), "alembic.ini")
+    if not os.path.exists(alembic_cfg_path):
+        print("⚠️ alembic.ini не найден, пропускаем миграции.")
+        return
+
+    try:
+        alembic_cfg = Config(alembic_cfg_path)
+        command.upgrade(alembic_cfg, "head")
+        print("✅ Миграции Alembic применены.")
+    except Exception as e:
+        print(f"❌ Ошибка при применении миграций: {e}")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    if os.getenv('RENDER'):
+        # Render: всегда используем PostgreSQL + миграции
+        apply_migrations()
+    else:
+        # Локально: SQLite или PostgreSQL
+        if os.getenv('DATABASE_URL') is None:
+            with app.app_context():
+                db.create_all()
+    app.run(
+        host='0.0.0.0',
+        port=int(os.environ.get('PORT', 10000)),
+        debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    )
