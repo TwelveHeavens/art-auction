@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_mail import Mail
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -46,6 +47,16 @@ if os.path.exists(DOTENV_PATH):
     load_dotenv(DOTENV_PATH)
 
 app = Flask(__name__)
+# === Настройка Flask-Mail ===
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
+app.config['MAIL_USE_SSL'] = os.getenv('MAIL_USE_SSL', 'False').lower() == 'true'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')  # Ваш email
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')  # Пароль приложения
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', 'Art-Auction <noreply@art-auction.ru>')
+
+mail = Mail(app)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-secret-key-for-local')
 INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
 os.makedirs(INSTANCE_DIR, exist_ok=True)  # Создаём папку instance/
@@ -102,6 +113,10 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)  # ← Новое поле (логин)
     username = db.Column(db.String(80), unique=True, nullable=False) # ← Осталось как имя для отображения
     password_hash = db.Column(db.String(120), nullable=False)
+    
+    # Поля для подтверждения email
+    is_confirmed = db.Column(db.Boolean, nullable=False, default=False)
+    confirmed_at = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
