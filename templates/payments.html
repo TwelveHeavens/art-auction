@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-4">Мои платежи</h2>
+
+{% if won_lots %}
+<div class="row">
+    {% for lot in won_lots %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100 border-0 shadow-sm rounded-4">
+            <!-- Изображение лота -->
+            {% if lot.images %}
+                <img src="{{ lot.images[0].url() }}" class="card-img-top rounded-top-4" style="height: 200px; object-fit: cover;" alt="{{ lot.title }}">
+            {% else %}
+                <img src="https://via.placeholder.com/400x200?text=No+Image" class="card-img-top rounded-top-4" style="height: 200px; object-fit: cover;" alt="Нет изображения">
+            {% endif %}
+            
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title fw-bold mb-1">{{ lot.title }}</h5>
+                <p class="card-text text-muted small mb-3">{{ lot.description[:60] }}{% if lot.description|length > 60 %}...{% endif %}</p>
+                
+                <!-- Цена -->
+                <h4 class="text-primary fw-bold mb-3">{{ "{:,.0f}".format(lot.current_price) }} ₽</h4>
+                
+                <!-- Статус оплаты -->
+                <div class="mb-3">
+                    {% if lot.payment_status == 'paid' %}
+                        <span class="badge bg-success-subtle text-success border border-success px-3 py-2 rounded-pill">✅ Оплачен</span>
+                    {% else %}
+                        <span class="badge bg-warning-subtle text-warning border border-warning px-3 py-2 rounded-pill">⏳ Ожидает оплаты</span>
+                    {% endif %}
+                </div>
+                
+                <div class="mt-auto d-flex justify-content-between align-items-center">
+                    <span class="text-muted small">Аукцион завершён</span>
+                    
+                    {% if lot.payment_status == 'unpaid' %}
+                        <form method="POST" action="{{ url_for('pay_lot', lot_id=lot.id) }}">
+                            <button type="submit" class="btn btn-success btn-sm px-3 rounded-pill">💳 Оплатить</button>
+                        </form>
+                    {% else %}
+                        <a href="{{ url_for('payment_receipt', lot_id=lot.id) }}" class="btn btn-outline-primary btn-sm px-3 rounded-pill">
+                            📄 Квитанция
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info rounded-3">
+    <i class="bi bi-info-circle me-2"></i>У вас пока нет выигранных лотов. Участвуйте в аукционах!
+</div>
+{% endif %}
+{% endblock %}

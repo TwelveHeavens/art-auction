@@ -8,6 +8,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import imghdr
+import uuid
 import magic
 
 def allowed_image(filename):
@@ -98,7 +99,8 @@ MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 # Модель пользователя
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)  # ← Новое поле (логин)
+    username = db.Column(db.String(80), unique=True, nullable=False) # ← Осталось как имя для отображения
     password_hash = db.Column(db.String(120), nullable=False)
 
     def set_password(self, password):
@@ -165,6 +167,44 @@ class Bid(db.Model):
 
     def created_at_moscow(self):
         return self.created_at.replace(tzinfo=pytz.UTC).astimezone(MOSCOW_TZ)
+    
+
+# Модель демо-оплаты
+class Payment(db.Model):
+    __tablename__ = 'payments'
+    id = db.Column(db.Integer, primary_key=True)
+    lot_id = db.Column(db.Integer, db.ForeignKey('lot.id'), nullable=False)
+    buyer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    
+    # Статусы как в реальных платёжных системах
+    status = db.Column(db.String(20), default='pending')  # pending, processing, succeeded, canceled, failed
+    payment_method = db.Column(db.String(30), default='card')  # card, sbp, yoomoney
+    card_last4 = db.Column(db.String(4), nullable=True)  # последние 4 цифры карты (демо)
+    
+    payment_id = db.Column(db.String(50), unique=True, nullable=True)  # ID транзакции
+    description = db.Column(db.String(200), nullable=True)  # описание платежа
+    
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.UTC))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.UTC), onupdate=lambda: datetime.now(pytz.UTC))
+    
+    # Связи
+    lot = db.relationship('Lot', backref='payments')
+    buyer = db.relationship('User')
+    
+    def is_succeeded(self):
+        return self.status == 'succeeded'
+    
+    def get_status_label(self):
+        labels = {
+            'pending': 'Ожидает оплаты',
+            'processing': 'Обработка',
+            'succeeded': 'Оплачено',
+            'canceled': 'Отменено',
+            'failed': 'Ошибка'
+        }
+        return labels.get(self.status, self.status)
+
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -234,35 +274,50 @@ def welcome():
     
     return render_template('welcome.html', featured_lots=featured_lots, moscow_tz=MOSCOW_TZ, now_moscow=now_moscow)
 
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
+        email = request.form['email']      # ← Получаем email
         username = request.form['username']
         password = request.form['password']
-        if User.query.filter_by(username=username).first():
-            flash('Пользователь уже существует!')
+        
+        # Проверка на дубликат email
+        if User.query.filter_by(email=email).first():
+            flash('Пользователь с таким Email уже существует!')
             return redirect(url_for('register'))
-        user = User(username=username)
+            
+        # Проверка на дубликат username
+        if User.query.filter_by(username=username).first():
+            flash('Такой никнейм уже занят!')
+            return redirect(url_for('register'))
+
+        user = User(email=email, username=username)  # ← Передаем email
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
+        
         profile = Profile(user_id=user.id)
         db.session.add(profile)
         db.session.commit()
+        
         flash('Регистрация успешна! Войдите в систему.')
         return redirect(url_for('login'))
     return render_template('register.html')
 
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username']
+        email = request.form['email']  # ← Ищем по email
         password = request.form['password']
-        user = User.query.filter_by(username=username).first()
+        
+        user = User.query.filter_by(email=email).first()
+        
         if user and user.check_password(password):
             login_user(user)
             return redirect(url_for('index'))
-        flash('Неверное имя пользователя или пароль!')
+        flash('Неверный Email или пароль!')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -379,6 +434,134 @@ def lot_detail(lot_id):
             flash('Ваша ставка должна быть выше текущей!')
         return redirect(url_for('lot_detail', lot_id=lot.id))
     return render_template('lot_detail.html', lot=lot, bids=bids, winner=winner, moscow_tz=MOSCOW_TZ, now_moscow=now_moscow)
+
+@app.route('/pay/<int:lot_id>', methods=['POST'])
+@login_required
+def pay_lot(lot_id):
+    """Демо-оплата с имитацией реального процесса"""
+    import time
+    lot = Lot.query.get_or_404(lot_id)
+    
+    # Проверки (как в реальном проекте)
+    if lot.is_active():
+        flash('Оплата доступна только после завершения аукциона.', 'warning')
+        return redirect(url_for('lot_detail', lot_id=lot.id))
+        
+    winner = lot.get_winner()
+    if not winner or winner.id != current_user.id:
+        flash('Оплатить может только победитель.', 'danger')
+        return redirect(url_for('lot_detail', lot_id=lot.id))
+    
+    if Payment.query.filter_by(lot_id=lot.id, status='succeeded').first():
+        flash('Лот уже оплачен.', 'info')
+        return redirect(url_for('lot_detail', lot_id=lot.id))
+
+    # 1. Создаём платёж со статусом "pending"
+    payment = Payment(
+        lot_id=lot.id,
+        buyer_id=current_user.id,
+        amount=lot.current_price,
+        status='pending',
+        payment_id=f"MOCK-{uuid.uuid4().hex[:8].upper()}",
+        payment_method='card',
+        card_last4='4242',  # демо-карта
+        description=f'Оплата лота #{lot.id}: {lot.title}'
+    )
+    db.session.add(payment)
+    db.session.commit()
+    
+    # 2. Имитация обработки платежа (в реальности — ожидание вебхука)
+    payment.status = 'processing'
+    db.session.commit()
+    
+    # Имитация задержки обработки (в демо — мгновенно)
+    # time.sleep(2)  # раскомментируйте для демонстрации "загрузки"
+    
+    # 3. Имитация успешного завершения
+    payment.status = 'succeeded'
+    payment.updated_at = datetime.now(pytz.UTC)
+    db.session.commit()
+    
+    # 4. Показываем профессиональную страницу подтверждения
+    flash('✅ Оплата прошла успешно!', 'success')
+    return render_template('payment_success.html', payment=payment, MOSCOW_TZ=MOSCOW_TZ)
+
+
+@app.route('/payments')
+@login_required
+def payment_history():
+    """Показывает все выигранные лоты пользователя со статусом оплаты"""
+    # Берём все завершённые аукционы
+    finished_lots = Lot.query.filter(Lot.end_time < datetime.now(pytz.UTC)).all()
+    my_won_lots = []
+
+    for lot in finished_lots:
+        winner = lot.get_winner()
+        if winner and winner.id == current_user.id:
+            # Проверяем наличие успешной оплаты
+            payment = Payment.query.filter_by(lot_id=lot.id, status='succeeded').first()
+            
+            # Добавляем атрибуты статуса прямо в объект лота для шаблона
+            lot.payment_status = 'paid' if payment else 'unpaid'
+            lot.payment = payment
+            my_won_lots.append(lot)
+
+    # Сортировка: сначала неоплаченные, потом по дате завершения (новые сверху)
+    my_won_lots.sort(key=lambda x: (x.payment_status == 'paid', x.end_time), reverse=True)
+
+    return render_template('payments.html', won_lots=my_won_lots, MOSCOW_TZ=MOSCOW_TZ)
+
+
+@app.route('/payment/receipt/<int:lot_id>')
+@login_required
+def payment_receipt(lot_id):
+    """Просмотр квитанции по оплаченному лоту"""
+    lot = Lot.query.get_or_404(lot_id)
+    
+    # Защита: квитанцию может видеть только победитель
+    if lot.user_id == current_user.id:
+        flash('Нельзя посмотреть квитанцию за свой лот.', 'warning')
+        return redirect(url_for('index'))
+        
+    payment = Payment.query.filter_by(
+        lot_id=lot_id, 
+        buyer_id=current_user.id, 
+        status='succeeded'
+    ).first()
+    
+    if not payment:
+        flash('Платёж не найден или не завершён.', 'danger')
+        return redirect(url_for('payment_history'))
+        
+    return render_template('payment_success.html', payment=payment, MOSCOW_TZ=MOSCOW_TZ)
+
+
+@app.route('/debug/webhook-simulator', methods=['GET', 'POST'])
+def webhook_simulator():
+    """Демо-страница для симуляции вебхуков (только для разработки)"""
+    if request.method == 'POST':
+        payment_id = request.form.get('payment_id')
+        action = request.form.get('action')  # succeed, cancel, fail
+        
+        payment = Payment.query.get(int(payment_id))
+        if payment:
+            if action == 'succeed':
+                payment.status = 'succeeded'
+                msg = '✅ Вебхук: оплата подтверждена'
+            elif action == 'cancel':
+                payment.status = 'canceled'
+                msg = '❌ Вебхук: оплата отменена'
+            else:
+                payment.status = 'failed'
+                msg = '⚠️ Вебхук: ошибка оплаты'
+            payment.updated_at = datetime.now(pytz.UTC)
+            db.session.commit()
+            flash(msg, 'info')
+        return redirect(url_for('payment_history'))
+    
+    # GET: показать форму симуляции
+    pending_payments = Payment.query.filter(Payment.status.in_(['pending', 'processing'])).all()
+    return render_template('webhook_simulator.html', payments=pending_payments)
 
 
 #  Функционал редактирования и удаления лота

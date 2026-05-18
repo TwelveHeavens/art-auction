@@ -52,7 +52,7 @@
         {% if lot.is_active() %}
             <p><strong>Статус:</strong> Активен</p>
             {% if current_user.is_authenticated %}
-                <form method="POST">
+                <form method="POST" id="bidForm">
                     <div class="mb-3">
                         <label for="bid_amount" class="form-label">Ваша ставка (руб.)</label>
                     </div>
@@ -60,7 +60,13 @@
                         <input type="text" class="form-control" id="bid_amount" name="bid_amount" required>
                         <span class="input-group-text">руб.</span>
                     </div>
-                    <button type="submit" class="btn btn-primary">Сделать ставку</button>
+                    
+                    <div class="d-grid gap-2 mb-3">
+                        <button type="submit" class="btn btn-primary">Сделать ставку</button>
+                        <button type="button" class="btn btn-outline-success" id="stepBidBtn" data-current-price="{{ lot.current_price }}">
+                            Ставка +5% ({{ "{:,.0f}".format(lot.current_price * 1.05) }} ₽)
+                        </button>
+                    </div>
                 </form>
             {% else %}
                 <p><a href="{{ url_for('login') }}">Войдите</a>, чтобы сделать ставку.</p>
@@ -79,6 +85,37 @@
                 </div>
             {% else %}
                 <p>Ставок не было.</p>
+            {% endif %}
+        {% endif %}
+                {# === Блок демо-оплаты для дипломного проекта === #}
+        {% if not lot.is_active() and winner and winner.id == current_user.id %}
+            {% set payment = lot.payments|selectattr("status", "equalto", "succeeded")|first|default(None) %}
+            
+            {% if payment %}
+                <div class="card mt-3 border-success shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Оплата подтверждена</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-1"><strong>Сумма:</strong> {{ "{:,.2f}".format(payment.amount) }} ₽</p>
+                        <p class="mb-0"><strong>ID транзакции:</strong> <code class="bg-light px-2 py-1 rounded">{{ payment.payment_id }}</code></p>
+                    </div>
+                </div>
+            {% else %}
+                <div class="card mt-3 border-warning shadow-sm">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0">🏆 Вы победили в аукционе!</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-2">Ваша выигрышная ставка: <strong>{{ "{:,.2f}".format(lot.current_price) }} ₽</strong></p>
+                        <form method="POST" action="{{ url_for('pay_lot', lot_id=lot.id) }}">
+                            <button type="submit" class="btn btn-success btn-lg w-100">
+                                💳 Оплатить лот (Демо)
+                            </button>
+                        </form>
+                        <small class="text-muted d-block mt-2">* Демо-режим для дипломного проекта</small>
+                    </div>
+                </div>
             {% endif %}
         {% endif %}
         <h3>История ставок</h3>
@@ -157,6 +194,19 @@ document.getElementById('bid_amount').addEventListener('input', function(e) {
 document.querySelector('form').addEventListener('submit', function(e) {
     let input = document.getElementById('bid_amount');
     input.value = input.value.replace(/\s/g, '');
+});
+
+// Кнопка быстрой ставки +5%
+document.getElementById('stepBidBtn').addEventListener('click', function() {
+    const currentPrice = parseFloat(this.dataset.currentPrice);
+    const newBid = Math.ceil(currentPrice * 1.05);
+    const input = document.getElementById('bid_amount');
+    
+    // Используем существующую функцию форматирования для единообразия
+    input.value = formatNumberWithSpaces(newBid.toString());
+    
+    // Отправляем форму (бэкенд сам уберёт пробелы)
+    document.getElementById('bidForm').submit();
 });
 </script>
 {% endblock %}
