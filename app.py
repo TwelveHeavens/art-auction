@@ -388,11 +388,21 @@ def register():
         db.session.commit()
         
         # Отправляем письмо с подтверждением
-        token = generate_confirmation_token(user.email)
-        if send_confirmation_email(user.email, token):
-            flash('Письмо с подтверждением отправлено на ваш Email. Проверьте папку «Спам».')
+        is_render_env = os.getenv('RENDER') == 'true'
+        
+        if is_render_env:
+            # На Render автоматически подтверждаем аккаунт (обход блокировки SMTP)
+            user.is_confirmed = True
+            user.confirmed_at = datetime.now(pytz.UTC)
+            db.session.commit()
+            flash('✅ Аккаунт создан и активирован! (Демо-режим для Render)')
         else:
-            flash('Ошибка при отправке письма. Попробуйте позже.')
+            # Локально отправляем настоящее письмо
+            token = generate_confirmation_token(user.email)
+            if send_confirmation_email(user.email, token):
+                flash('✅ Письмо с подтверждением отправлено на ваш Email. Проверьте папку «Спам».')
+            else:
+                flash('⚠️ Ошибка при отправке письма. Попробуйте позже.')
         
         return redirect(url_for('login'))
         
