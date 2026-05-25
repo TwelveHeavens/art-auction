@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import imghdr
 import magic
+import resend
 
 def confirmation_required(f):
     """Декоратор: требует подтверждённый email"""
@@ -26,39 +27,47 @@ def confirmation_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+import resend
+from flask import url_for
+import os
+
 def send_confirmation_email(user_email, token):
-    """Отправляет письмо с ссылкой для подтверждения"""
+    """Отправляет письмо с ссылкой для подтверждения через Resend API (HTTPS)"""
+    resend.api_key = os.getenv('RESEND_API_KEY')
     confirm_url = url_for('confirm_email', token=token, _external=True)
     
-    html = f"""
+    html_content = f"""
     <html>
-      <body>
-        <h2>Подтвердите ваш аккаунт в Арт-аукционе</h2>
+      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Подтвердите ваш аккаунт в Арт-аукционе</h2>
         <p>Здравствуйте!</p>
         <p>Для завершения регистрации перейдите по ссылке:</p>
-        <p><a href="{confirm_url}">{confirm_url}</a></p>
+        <p style="margin: 20px 0;">
+          <a href="{confirm_url}" style="background: #0d6efd; color: white; padding: 12px 24px; 
+             text-decoration: none; border-radius: 4px; display: inline-block;">
+            ✅ Подтвердить аккаунт
+          </a>
+        </p>
+        <p><small>Или скопируйте ссылку в браузер:<br>{confirm_url}</small></p>
         <p>Ссылка действительна в течение 1 часа.</p>
-        <p>Если вы не регистрировались на нашем сайте — просто проигнорируйте это письмо.</p>
-        <hr>
-        <small>Это автоматическое сообщение, пожалуйста, не отвечайте на него.</small>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+        <small style="color: #666;">Это автоматическое сообщение, пожалуйста, не отвечайте на него.</small>
       </body>
     </html>
     """
     
-    msg = Message(
-        subject='Подтвердите ваш аккаунт | Арт-аукцион',
-        recipients=[user_email],
-        html=html,
-        sender=app.config['MAIL_DEFAULT_SENDER']
-    )
-    
     try:
-        mail.send(msg)
+        params = {
+            "from": "Art-Auction <onboarding@resend.dev>",  # ✅ Стандартный домен Resend для бесплатного тарифа
+            "to": user_email,
+            "subject": "Подтвердите ваш аккаунт | Арт-аукцион",
+            "html": html_content
+        }
+        resend.Emails.send(params)
         return True
     except Exception as e:
-        app.logger.error(f'Failed to send email: {e}')
+        app.logger.error(f'Resend API error: {e}')
         return False
-    
 
 def allowed_image(filename):
     """Проверяет, разрешён ли формат изображения."""
