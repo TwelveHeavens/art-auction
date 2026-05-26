@@ -31,9 +31,19 @@ import resend
 from flask import url_for
 import os
 
+import resend
+from flask import url_for
+import os
+
 def send_confirmation_email(user_email, token):
-    """Отправляет письмо с ссылкой для подтверждения через Resend API (HTTPS)"""
-    resend.api_key = os.getenv('RESEND_API_KEY')
+    """Отправляет письмо с ссылкой для подтверждения через Resend API"""
+    api_key = os.getenv('RESEND_API_KEY')
+    
+    if not api_key:
+        app.logger.error('RESEND_API_KEY is not set in environment variables')
+        return False
+    
+    resend.api_key = api_key
     confirm_url = url_for('confirm_email', token=token, _external=True)
     
     html_content = f"""
@@ -58,12 +68,13 @@ def send_confirmation_email(user_email, token):
     
     try:
         params = {
-            "from": "Art-Auction <onboarding@resend.dev>",  # ✅ Стандартный домен Resend для бесплатного тарифа
+            "from": "Art-Auction <onboarding@resend.dev>",
             "to": user_email,
             "subject": "Подтвердите ваш аккаунт | Арт-аукцион",
             "html": html_content
         }
         resend.Emails.send(params)
+        app.logger.info(f'Email sent to {user_email}')
         return True
     except Exception as e:
         app.logger.error(f'Resend API error: {e}')
@@ -396,27 +407,16 @@ def register():
         db.session.add(profile)
         db.session.commit()
         
-        # Отправляем письмо с подтверждением
-        is_render_env = os.getenv('RENDER') == 'true'
-        
-        if is_render_env:
-            # На Render автоматически подтверждаем аккаунт (обход блокировки SMTP)
-            user.is_confirmed = True
-            user.confirmed_at = datetime.now(pytz.UTC)
-            db.session.commit()
-            flash('✅ Аккаунт создан и активирован! (Демо-режим для Render)')
+        # ОТПРАВЛЯЕМ ПИСЬМО (всегда, и локально, и на Render)
+        token = generate_confirmation_token(user.email)
+        if send_confirmation_email(user.email, token):
+            flash('✅ Письмо с подтверждением отправлено на ваш Email. Проверьте папку «Спам».')
         else:
-            # Локально отправляем настоящее письмо
-            token = generate_confirmation_token(user.email)
-            if send_confirmation_email(user.email, token):
-                flash('✅ Письмо с подтверждением отправлено на ваш Email. Проверьте папку «Спам».')
-            else:
-                flash('⚠️ Ошибка при отправке письма. Попробуйте позже.')
+            flash('⚠️ Ошибка при отправке письма. Попробуйте позже.')
         
         return redirect(url_for('login'))
         
     return render_template('register.html')
-
 
 @app.route('/confirm/<token>')
 def confirm_email(token):
