@@ -27,14 +27,7 @@ def confirmation_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-import resend
-from flask import url_for
-import os
-
-import resend
-from flask import url_for
-import os
-
+# === Функция отправки письма подтверждения ===
 def send_confirmation_email(user_email, token):
     """Отправляет письмо с ссылкой для подтверждения через Resend API"""
     api_key = os.getenv('RESEND_API_KEY')
