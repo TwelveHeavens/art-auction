@@ -7,13 +7,16 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
 from flask_sqlalchemy import SQLAlchemy
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from werkzeug.utils import secure_filename
 from functools import wraps
 import imghdr
 import magic
-import resend
+import smtplib
+
 
 def confirmation_required(f):
     """Декоратор: требует подтверждённый email"""
@@ -28,50 +31,43 @@ def confirmation_required(f):
     return decorated_function
 
 # === Функция отправки письма подтверждения ===
+from flask_mail import Message
+
 def send_confirmation_email(user_email, token):
-    """Отправляет письмо с ссылкой для подтверждения через Resend API"""
-    api_key = os.getenv('RESEND_API_KEY')
+    """Отправляет письмо через Flask-Mail + SMTP"""
     
-    if not api_key:
-        app.logger.error('RESEND_API_KEY is not set in environment variables')
-        return False
-    
-    resend.api_key = api_key
     confirm_url = url_for('confirm_email', token=token, _external=True)
     
     html_content = f"""
     <html>
       <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #333;">Подтвердите ваш аккаунт в Арт-аукционе</h2>
+        <h2>Подтвердите ваш аккаунт в Арт-аукционе</h2>
         <p>Здравствуйте!</p>
         <p>Для завершения регистрации перейдите по ссылке:</p>
-        <p style="margin: 20px 0;">
-          <a href="{confirm_url}" style="background: #0d6efd; color: white; padding: 12px 24px; 
-             text-decoration: none; border-radius: 4px; display: inline-block;">
-            ✅ Подтвердить аккаунт
-          </a>
-        </p>
-        <p><small>Или скопируйте ссылку в браузер:<br>{confirm_url}</small></p>
+        <p><a href="{confirm_url}">{confirm_url}</a></p>
         <p>Ссылка действительна в течение 1 часа.</p>
-        <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-        <small style="color: #666;">Это автоматическое сообщение, пожалуйста, не отвечайте на него.</small>
+        <hr>
+        <small>Это автоматическое сообщение.</small>
       </body>
     </html>
     """
     
     try:
-        params = {
-            "from": "Art-Auction <onboarding@resend.dev>",
-            "to": user_email,
-            "subject": "Подтвердите ваш аккаунт | Арт-аукцион",
-            "html": html_content
-        }
-        resend.Emails.send(params)
+        msg = Message(
+            subject='Подтвердите ваш аккаунт | Арт-аукцион',
+            recipients=[user_email],
+            html=html_content,
+            sender=app.config['MAIL_DEFAULT_SENDER']
+        )
+        mail.send(msg)
         app.logger.info(f'Email sent to {user_email}')
         return True
     except Exception as e:
-        app.logger.error(f'Resend API error: {e}')
+        # Простой лог без эмодзи и кириллицы в сообщении ошибки
+        app.logger.error(f'Email error: {type(e).__name__}')
         return False
+    
+
 
 def allowed_image(filename):
     """Проверяет, разрешён ли формат изображения."""
